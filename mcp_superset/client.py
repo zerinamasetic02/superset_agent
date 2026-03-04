@@ -8,6 +8,23 @@ from typing import Any
 
 import httpx
 
+
+def _rison_dumps(obj: dict[str, Any]) -> str:
+    """Minimal RISON encoder for simple dicts (e.g. pagination). Format: (k:v,k2:v2)."""
+    parts = []
+    for k, v in obj.items():
+        if isinstance(v, bool):
+            parts.append(f"{k}:!{'t' if v else 'f'}")
+        elif isinstance(v, (int, float)):
+            parts.append(f"{k}:{v}")
+        elif isinstance(v, str):
+            # Escape quotes and backslashes
+            escaped = v.replace("\\", "\\\\").replace('"', '\\"')
+            parts.append(f'{k}:"{escaped}"')
+        else:
+            parts.append(f"{k}:{v}")
+    return "(" + ",".join(parts) + ")"
+
 # Default timeout for API calls
 DEFAULT_TIMEOUT = 60.0
 
@@ -201,6 +218,28 @@ class SupersetClient:
         if isinstance(data, dict) and "result" in data:
             return data["result"]
         return data if isinstance(data, list) else []
+
+    def list_all_datasets(self, page_size: int = 100) -> list[dict[str, Any]]:
+        """List all datasets across all pages using RISON-encoded pagination."""
+        all_results: list[dict[str, Any]] = []
+        page = 0
+        while True:
+            q_obj: dict[str, Any] = {"page": page, "page_size": page_size}
+            params = {"q": _rison_dumps(q_obj)}
+            data = self.get("/api/v1/dataset/", params=params)
+            if isinstance(data, dict) and "result" in data:
+                result = data["result"]
+            elif isinstance(data, list):
+                result = data
+            else:
+                break
+            if not result:
+                break
+            all_results.extend(result)
+            if len(result) < page_size:
+                break
+            page += 1
+        return all_results
 
     def get_dataset(self, dataset_id: int) -> dict[str, Any]:
         data = self.get(f"/api/v1/dataset/{dataset_id}")
