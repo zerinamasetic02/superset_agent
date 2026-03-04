@@ -39,6 +39,15 @@ def register_tools(server, client: SupersetClient):
             return f"Error: {e}"
 
     @server.tool()
+    def superset_list_all_datasets(page_size: int = 100) -> str:
+        """List all datasets in Superset across all pages. Use when you need the full list (e.g. to find a dataset by name like vw_bioverse_performance_report)."""
+        try:
+            result = client.list_all_datasets(page_size=page_size)
+            return _result(f"Datasets (total {len(result)}):", result)
+        except Exception as e:
+            return f"Error: {e}"
+
+    @server.tool()
     def superset_get_dataset(dataset_id: int) -> str:
         """Get a dataset by id, including columns and metrics. Use to see available columns before creating charts."""
         try:
