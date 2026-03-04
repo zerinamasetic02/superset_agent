@@ -2,15 +2,12 @@
 
 MCP server that exposes **Apache Superset** as tools so the AI can build dashboards from Cursor: create dashboards, add charts from datasets (e.g. Snowflake views), and set filters from your instructions.
 
-## Sharing with your team
+## Sharing with the team
 
-**Best approach:** Share only the **code** (this repo via Git or a shared folder). Each colleague does a one-time setup on their machine with **their own** Superset credentials. No credentials are stored in the repo.
+**Best approach:** Each colleague does a one-time setup on their machine with **their own** Superset credentials. No credentials are stored in the repo.
 
-- **You share:** The repo (e.g. `git clone` or internal Git server).
-- **You do not share:** `.env` files or Cursor MCP config containing real cookies/tokens/passwords.
 - **Each person:** Follows **[TEAM_SETUP.md](TEAM_SETUP.md)** once: clone → `pip install -e .` → get their own auth (see [GET_TOKEN.md](GET_TOKEN.md)) → add Superset MCP in Cursor with their path and credentials → reload MCP.
 
-The repo includes a [.gitignore](.gitignore) so `.env` and other secrets are not committed.
 
 ## Prerequisites
 
@@ -169,3 +166,4 @@ python -m mcp_superset.server
 ```
 
 The server uses stdio; Cursor will start it automatically when the tools are used.
+
