@@ -1,6 +1,9 @@
 # Credentials and local config — do not commit
 .env
 .env.local
+
+# Optional local docs (not pushed to shared repo)
+STEP_BY_STEP.md
 *.token
 .superset_token
 
