@@ -246,3 +246,25 @@ def register_tools(server, client: SupersetClient):
             return _result("Dashboard charts:", result)
         except Exception as e:
             return f"Error: {e}"
+
+
+    @server.tool()
+    def superset_sqllab_execute_query(query: str, database_id: int, schema: str | None = None) -> str:
+        """Execute a SQL query. (if dont know db id, require call list_databases)"""
+        try:
+            result = client.execute_sql(query, database_id, schema)
+            columns = result.get("columns", [])
+            data = result.get("data", [])
+            status = result.get("status", "unknown")
+            if status == "error":
+                error_msg = result.get("error_message") or result.get("errors") or result
+                return f"Query error: {error_msg}"
+            col_names = [c.get("column_name") or c.get("name", "?") for c in columns] if columns else []
+            row_count = len(data)
+            output_lines = [f"Status: {status}", f"Columns: {col_names}", f"Rows returned: {row_count}", ""]
+            if data:
+                output_lines.append(json.dumps(data, indent=2, default=str))
+            return "\n".join(output_lines)
+        except Exception as e:
+            return f"Error: {e}"
+
