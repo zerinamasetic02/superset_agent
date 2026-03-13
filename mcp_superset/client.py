@@ -64,6 +64,7 @@ class SupersetClient:
         self._access_token: str | None = access_token
         self._refresh_token: str | None = refresh_token or None
         self._session_cookie: str | None = (session_cookie or "").strip() or None
+        self._csrf_token: str | None = None
         if not self._access_token and not self._session_cookie and not (username and password):
             raise ValueError(
                 "Provide session_cookie, access_token, or both username and password."
@@ -72,13 +73,38 @@ class SupersetClient:
     def _uses_cookie(self) -> bool:
         return bool(self._session_cookie)
 
-    def _headers(self) -> dict[str, str]:
+    def _fetch_csrf_token(self) -> str:
+        """Fetch CSRF token from Superset (required for POST/PUT/DELETE with session cookie)."""
+        url = f"{self.base_url}/api/v1/security/csrf_token/"
+        headers = {
+            "Cookie": self._session_cookie,
+            "Accept": "application/json",
+            "Referer": self.base_url,
+        }
+        with httpx.Client(timeout=self.timeout) as client:
+            r = client.get(url, headers=headers)
+        if r.status_code >= 400:
+            raise SupersetAPIError(
+                f"Failed to fetch CSRF token: {r.text}",
+                status_code=r.status_code,
+                body=r.text,
+            )
+        data = r.json()
+        return data.get("result", "")
+
+    def _headers(self, include_csrf: bool = False) -> dict[str, str]:
         if self._session_cookie:
-            return {
+            if include_csrf and not self._csrf_token:
+                self._csrf_token = self._fetch_csrf_token()
+            headers: dict[str, str] = {
                 "Cookie": self._session_cookie,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                "Referer": self.base_url,
             }
+            if include_csrf and self._csrf_token:
+                headers["X-CSRFToken"] = self._csrf_token
+            return headers
         if not self._access_token:
             self._obtain_token()
         return {
@@ -154,15 +180,27 @@ class SupersetClient:
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any] | list[Any]:
         url = f"{self.base_url}{path}"
+        mutating = method.upper() in ("POST", "PUT", "DELETE", "PATCH")
         with httpx.Client(timeout=self.timeout) as client:
             r = client.request(
                 method,
                 url,
-                headers=self._headers(),
+                headers=self._headers(include_csrf=mutating),
                 json=json,
                 params=params,
             )
-        if r.status_code in (401, 403) and not self._uses_cookie():
+        if r.status_code == 401 and self._uses_cookie():
+            # CSRF token may have expired — refetch and retry once
+            self._csrf_token = self._fetch_csrf_token()
+            with httpx.Client(timeout=self.timeout) as client:
+                r = client.request(
+                    method,
+                    url,
+                    headers=self._headers(include_csrf=mutating),
+                    json=json,
+                    params=params,
+                )
+        elif r.status_code in (401, 403) and not self._uses_cookie():
             self._obtain_token()
             with httpx.Client(timeout=self.timeout) as client:
                 r = client.request(
@@ -431,3 +469,25 @@ class SupersetClient:
         """Delete a chart by id."""
         data = self.delete(f"/api/v1/chart/{pk}")
         return data if isinstance(data, dict) else {"message": "deleted"}
+
+    # --- SQL Lab ---
+    def execute_sql(
+        self,
+        sql: str,
+        database_id: int,
+        schema: str | None = None,
+    ) -> dict[str, Any]:
+        """Execute a SQL query via the Superset SQL Lab API."""
+        payload: dict[str, Any] = {
+            "database_id": database_id,
+            "sql": sql,
+            "json": True,
+            "select_as_cta": False,
+            "tmp_table_name": "",
+            "client_id": "",
+            "runAsync": False,
+        }
+        if schema:
+            payload["schema"] = schema
+        data = self.post("/api/v1/sqllab/execute/", json=payload)
+        return data if isinstance(data, dict) else {}
